@@ -1,13 +1,12 @@
 ---
-title: "lab 10 ash"
-author: "Ashley Stroud"
-date: "December 3, 2019"
+title: "ESM 206 Fall 2019 - Lab 10"
+author: "Allison Horst"
+date: "11/29/2019"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
 library(tidyverse)
 library(janitor)
 library(corrplot)
@@ -19,7 +18,6 @@ library(stargazer) # For nice regression tables!
 library(sf)
 library(gganimate)
 library(transformr)
-
 ```
 
 ## Objectives:
@@ -205,6 +203,88 @@ ggplot() +
 
 
 ```
+
+
+###Our first map (thanks sf package)
+
+'sf' created by Edzer Pebesma, created for sticky geometries
+ sticky geometries: when you get a bunch of spatial data with attributes associated with it, ie existed at this lat long and frog was this color and this size and this species at this coord in space. sticky can treat all attribute like any other data frame and spatial info sticks to it no matter what you do to wrangle that data in r. so geometry just sticks to it. 
+ 
+ we will look at points and polygons. first take data not recognized as spatial
+ 
+```{r}
+
+dams <- read_csv("ca_dams.csv") %>% 
+  clean_names() %>% 
+  drop_na(latitude) %>%  #drop any obs that has na for lat
+  drop_na(longitude) %>% 
+  drop_na(year_completed)
+
+
+# we want r to understand as simple feature geometries, sf comperts spaciotempo data to simple feature data 
+```
+ 
+convert our data frame to an sf oject using sf_as_sf
+```{r}
+dams_sf <- st_as_sf(dams, coords = c("longitude", "latitude"))
+
+st_crs(dams_sf) <- 4326 # convert coordingating systems
+
+plot(dams_sf) # for every attribute in df, it creates a map and tries to color coordinate off of attributes
+#would like to plot location of dams, on background on state of california which is shape file data
+```
+
+when download spatial data comes with a ton of information, if look in ca folder, lots of stuff. 
+
+
+read in the california border polygon data:
+```{r}
+ca_border <- read_sf(here::here("ca_state_border"), layer = "CA_State_TIGER2016")
+plot(ca_border)
+
+
+```
+
+now lets plot them together with ggplot2:
+
+```{r}
+ggplot()+
+  geom_sf(data= dams_sf, color = "orange", size = 1, alpha = 0.4)
+
+ggplot() +
+  geom_sf(data = ca_border, fill = "green", color = "black") +
+  theme_void()
+
+
+ggplot() +
+  geom_sf(data = ca_border) +
+  geom_sf(data = dams_sf)
+
+#if you have sf objects and convert lat and longs using st to sf, then using geom sf, can use same graphics w same syntax
+```
+
+Now let's annimate it with gganimate
+```{r}
+
+ggplot()+
+  geom_sf(data = ca_border,
+          fill = "dark green", color = "black") +
+  geom_sf(data = dams_sf, color = "black", size = 1)+
+  theme_void() + 
+  labs(title = 'Year: {round(frame_time, 0)}') +#{} these brackets say paste, so paste frame_time saying completed times completed under year title
+  transition_time(year_completed) + #default is points to show up and then disappear, but one more line of shadow_mark will make that
+  shadow_mark()
+
+```
+
+
+
+
+
+
+
+
+
 
 
 
