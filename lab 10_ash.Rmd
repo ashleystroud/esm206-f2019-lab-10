@@ -1,0 +1,221 @@
+---
+title: "lab 10 ash"
+author: "Ashley Stroud"
+date: "December 3, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(janitor)
+library(corrplot)
+library(beepr)
+library(praise)
+library(stargazer) # For nice regression tables! 
+# Hlavac, Marek (2018). stargazer: Well-Formatted Regression and Summary Statistics Tables.
+#  R package version 5.2.2. https://CRAN.R-project.org/package=stargazer 
+library(sf)
+library(gganimate)
+library(transformr)
+
+```
+
+## Objectives:
+
+- Multiple linear regression
+- Check assumptions w/diagnostic plots
+- Make predictions with new data
+- our first map w sf and ggplot
+- Some other fun things (beepr, praise, sf, gganimate)
+
+### 1. Multiple linear regression: SLO home prices
+
+```{r}
+
+homes <- read_csv("slo_homes.csv") %>% 
+  clean_names()
+
+beep(2) # choose a number between 1 and 12, different sounds when code is done 
+praise() # just gives you happy messages at any point in time, can randomly throw that in when working with collaborators, can also specifiy elements want include in praise, so console names(praise_parts), then can add that in
+praise("you are totally ${adjective} Super ${EXCLAMATION}!")
+```
+
+```{r}
+homes_sub <- homes %>% 
+  filter(city %in% c("San Luis Obispo", "Atascadero", "Arroyo Grande"))
+
+#could in console look at unique(homes_city)
+```
+
+
+Are there correlations between variables that we'd consider while trying to model home price?
+
+
+```{r}
+homes_cor <- cor(homes_sub[2:5]) # apply to homes sub, only for columns 2-5, cor is parsons
+homes_cor
+
+
+#visually, look at bedroom and bathroom high pos correlation, also sqft with number of bathrooms. this makes you think, maybe if include all in a model, mb all just diff ways of tryig to say how big a house is which may be a concern, which we will check out
+
+#can also check out visually outside of table (you must supply corr matrix not original data):
+corrplot(homes_cor)
+#size and color indicates directionality and strength of correlation, small light are weaker, dark and large are stronger correlations
+
+corrplot(homes_cor,
+          method = "ellipse",
+          type = "upper")
+
+# is there any reason to think this is a non linear relationship???
+```
+
+
+
+```{r}
+
+ggplot(data = homes_sub, aes(x = sq_ft, y = price)) +
+  geom_point()
+
+
+#if look at bedroom vs price, if back out and look out, also could say maybe a pos linear relationship, nothing to think noteably and systematically non linear. so first always ask does linear relationship make sense?
+
+# will also check assumptions about residuals, but need to create model first, so residual is value minus value the model predicts
+
+```
+
+
+Let's stat with a complete model (includes city, bedrooms, bathrooms sq_ft, and sale status)
+
+```{r}
+
+homes_lm <- lm(price ~ city + bedrooms + bathrooms + sq_ft + status, data = homes_sub) # first give dependent variable, model as a funtion of, all diff variables
+
+#first look at summary and think about what actually tells us
+summary(homes_lm)
+
+#estimates are all the diff coefficients for all the diff predictor variables. so price = 184,120 - 167396(atascadero) + 31018(slo) - 161645(bedroom) + 48692(bathroom) + 389 (sq_Ft) + 303k(reg) - 19828(short)
+
+#when ask about nominal predictor variables, then it is in regards to reference level. if everything the same, would expect based on this model a home in atascadero to sell for 167 less than a home in arroyo grande. foreclosure is reference level for status. 
+
+#bedrooms coefficient concerns me, bc it says price will decrease with every added bedroom, doesnt make sense, a nonsensical coefficient, and strongly correlated with other predictor variables inthe model trying to explain the same thing. since bed, bath and sqaure feet all getting at the same thing which is how big is the house. so a couple of options that are better than including all 3, such a combined metric or pick one that is most representative of house size, like sq feet. 
+
+```
+adjust R of .54 means 54% predicted in home price, 54% better than randomly predicting home price
+
+
+
+now lets try another version of the model:
+
+just using sq_ft as a measure of home size
+```{r}
+
+homes_lm2 <- lm(price~ city + sq_ft + status, data = homes_sub)
+praise()
+
+summary(homes_lm2)
+
+#now model coeffecients seem more sound. 325 per sq foot is on pricey side for national average, but that makes sense bc central coast of california. Then interpret other coefficients, short sale 31k more than a foreclosure etc. 
+
+```
+
+AIC:
+```{r}
+AIC(homes_lm) #3576.834
+AIC(homes_lm2) #3584.3
+
+#if only using aic for which is better model, which should NEVER do, we would pick the first one because it is lower. 
+
+
+```
+
+### Now: check assumptions for normality and homoscedasticity
+
+as soon as people hear assumption of normality, think look at actual data, but if doing regression looking at the residuals not the actual data
+
+```{r}
+#last week used broom, but here we will use plot function
+
+plot(homes_lm2) # gives 4 diagnostic plots
+#first shows actual residual values, which shows that over course of model, does it seem like spread is getting noteably and systematically different? bulk of data-- is variance getting much larger or smaller? no, just pretty darn close, close to constant. looking at residuals vs fit, no concern of constant variance being validated
+#yep looks like the assumption of constnat ariance of residuels (aka homoscedasticity) is OK
+
+#second plot
+#qq plot of residuals, our observations to theoretical, so with exception of a few, does look overall linear? yes, almost perfect here. 121 means the price of the home is way way higher then our model would predict based on what we measured, doesnt mean model wrong, but could mean missing something important. so what about a house might make it remarkable higher: water view, school district, lot size, etc. having a point that looks like an outlier, doesnt mean obs wrong, just means could not have included variables that are needed to explain that value that is included. note value corresponds to a row. 
+
+
+#third plot: ?
+
+#4th is a measure of cooks distance- a measure of how much leverage any one observation has on a model fit, anything beyond 0.5, 4/n, unfairly high leverage on a model, should leave every data set  
+
+
+```
+
+Make a nice regression table: 
+```{r, results= 'asis'}
+#makes an html table in syntax, we dont want a pandoc to then change that again into html, explain already exists as html so use that when produce html, so in top code chunk put results = asis
+
+stargazer(homes_lm2, type = "html") # a html table w everything in regression summary. 
+#knitted doc is coeffiecent estimate, below is error, and asterisk is level of significance, number of stats explained at bottom, and also has overall model outcome. this is how you would present results of multiple linear regression is in a regression table, not in text. you can update everything to make it pretty. so for your final, if you get this, stargazer might be a good option. 
+
+
+
+```
+Let's make some predictions for hoke price based on a new data frame  of home characteristics
+
+make sure that the variables we create for the new data match the bariable that the model will be looking for to make new predictions
+
+```{r}
+# remember it is going to look for the 3 variables we put in lm2, so when create new df, we need to make sure the columns are named the same exact same thing as variables in the model, consisten names
+
+#could make vectors and do cbind but here we will do:
+#give column names and what they contain separated by comma
+new_df <- data.frame(
+  city = rep(c("San Luis Obispo", "Arroyo Grande", "Atascadero"), each =10), # this is just a vector of diff character strings, if add repeat around entire vector and then within but outside of vector how many time each element repeated
+  sq_ft = rep(seq(1000, 5000, length = 10)),#sequences length of 10 and then repeat, i would like to repeat a sequence of home sq ft that starts at 1000 feet and goes to 5000 sq ft and i want there to be in that seq 10 equally spaced values
+  status = "Regular"
+)
+
+
+```
+Now we'll make predictions on home prices based on that new data
+
+```{r}
+predict_df <- predict(homes_lm2, newdata = new_df) #model name then new data want to evaluate model for 
+
+predict_df # so now see what predicted price would be for each value in new df, but hard to look at separately so bind together new df w predictions:
+
+full_data <- data.frame(new_df, predict_df)
+full_data
+
+```
+
+now plot in ggplot to look at predictions (plot raw and put predictions on top)
+
+```{r}
+
+ggplot() +
+  geom_point(data = homes_sub, aes(x = sq_ft, y = price, color = city, pch = city)) +
+  geom_line(data = full_data, aes(x = sq_ft, y = predict_df, color = city))
+
+  
+#pch is point style  
+#points actual home price, lines are estimated values for different cities, looks weird bc plotting in 2d when we actually have 3 variables. 
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
